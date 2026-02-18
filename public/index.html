@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>World Cup Tracker</title>
+
+<link rel="manifest" href="manifest.json">
+
+<style>
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #0f172a;
+  color: white;
+}
+
+header {
+  display: flex;
+  overflow-x: auto;
+  padding: 10px;
+  gap: 10px;
+  background: #1e293b;
+}
+
+.team-bubble {
+  min-width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #334155;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.team-bubble.active {
+  background: #3b82f6;
+}
+
+main {
+  padding: 20px;
+}
+
+.card {
+  background: #1e293b;
+  padding: 15px;
+  border-radius: 12px;
+  margin-bottom: 15px;
+}
+</style>
+</head>
+
+<body>
+
+<header id="teamRow"></header>
+
+<main>
+  <h2 id="teamName"></h2>
+
+  <div class="card" id="stats"></div>
+
+  <div class="card">
+    <h3>Upcoming Matches</h3>
+    <div id="upcoming"></div>
+  </div>
+</main>
+
+<script>
+let selectedTeam = null;
+let worldcupData = { matches: [], standings: [] };
+
+const teamRow = document.getElementById("teamRow");
+const teamName = document.getElementById("teamName");
+const stats = document.getElementById("stats");
+const upcoming = document.getElementById("upcoming");
+
+async function fetchData() {
+  const matchesRes = await fetch("/api/matches");
+  const standingsRes = await fetch("/api/standings");
+
+  const matchesJson = await matchesRes.json();
+  const standingsJson = await standingsRes.json();
+
+  worldcupData.matches = matchesJson.data || [];
+  worldcupData.standings = standingsJson.data || [];
+
+  buildTeamList();
+  renderTeam();
+}
+
+function buildTeamList() {
+  const teams = Array.from(new Set(
+    worldcupData.matches.flatMap(m => [
+      m.home_team?.name,
+      m.away_team?.name
+    ]).filter(Boolean)
+  ));
+
+  if (!selectedTeam) {
+    selectedTeam = localStorage.getItem("team") || teams[0];
+  }
+
+  teamRow.innerHTML = "";
+
+  teams.forEach(team => {
+    const bubble = document.createElement("div");
+    bubble.className = "team-bubble";
+    if (team === selectedTeam) bubble.classList.add("active");
+    bubble.innerText = team.slice(0,3).toUpperCase();
+
+    bubble.onclick = () => {
+      selectedTeam = team;
+      localStorage.setItem("team", team);
+      buildTeamList();
+      renderTeam();
+    };
+
+    teamRow.appendChild(bubble);
+  });
+}
+
+function renderTeam() {
+  if (!selectedTeam) return;
+
+  teamName.innerText = selectedTeam;
+
+  const standing = worldcupData.standings.find(
+    s => s.team?.name === selectedTeam
+  );
+
+  stats.innerHTML = `
+    <p><strong>Points:</strong> ${standing?.points ?? "-"}</p>
+    <p><strong>Played:</strong> ${standing?.played ?? "-"}</p>
+    <p><strong>Goal Difference:</strong> ${standing?.goal_difference ?? "-"}</p>
+  `;
+
+  const upcomingMatches = worldcupData.matches.filter(m =>
+    (m.home_team?.name === selectedTeam ||
+     m.away_team?.name === selectedTeam) &&
+     m.status === "scheduled"
+  );
+
+  upcoming.innerHTML = upcomingMatches.length
+    ? upcomingMatches.map(m =>
+        `<p>${m.home_team.name} vs ${m.away_team.name}
+         — ${new Date(m.datetime).toLocaleString()}</p>`
+      ).join("")
+    : "<p>No upcoming matches</p>";
+}
+
+fetchData();
+setInterval(fetchData, 60000);
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js");
+}
+</script>
+
+</body>
+</html>
